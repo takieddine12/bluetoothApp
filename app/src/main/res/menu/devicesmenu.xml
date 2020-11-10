@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <item android:id="@+id/discover"
+          android:title=""
+          android:icon="@drawable/ic_baseline_compass_calibration_24"
+          app:showAsAction="ifRoom"/>
+
     <item android:id="@+id/onOffBlueTooth"
           android:title=""
           app:actionViewClass="androidx.appcompat.widget.AppCompatToggleButton"
           app:showAsAction="ifRoom"/>
+
 </menu>

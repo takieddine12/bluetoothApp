@@ -3,6 +3,7 @@ package com.example.androidstuff
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,16 +11,22 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.util.Log
 import android.view.Menu
+import android.view.MenuItem
 import android.widget.CompoundButton
 import android.widget.ToggleButton
 import androidx.appcompat.widget.AppCompatToggleButton
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.androidstuff.MainActivity.BlueToothClass.ThreadConnection
 import com.example.androidstuff.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.lang.Exception
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
@@ -81,6 +88,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+
+        // TODO : Turning Off / On Bluetooth
         menuInflater.inflate(R.menu.devicesmenu,menu)
         val menuItem = menu?.findItem(R.id.onOffBlueTooth)
         val toggleButton = menuItem?.actionView as AppCompatToggleButton
@@ -90,6 +99,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when(item.itemId) {
+            R.id.discover ->{
+                enableDiscoverability()
+            }
+        }
+        return true
+    }
+    private fun enableDiscoverability() {
+         val discoverIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+             putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION,300)
+         }
+        startActivity(discoverIntent)
     }
     private fun showBluetoothDevices(){
              // TODO : Show All Devices With BlueTooth Turned On
@@ -118,25 +142,98 @@ class MainActivity : AppCompatActivity() {
 
                     devicesAdapter.setClicked(object  : DevicesAdapter.BlueToothClickListener{
                         override fun clicked(position: Int) {
-                            val bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.randomUUID())
-                            CoroutineScope(Dispatchers.IO).launch {
-                                bluetoothSocket.connect()
-                            }
+                           ThreadConnection(bluetoothAdapter,device)
                         }
                     })
 
                 }
-
-
         }
     }
-    companion object {
-        const val BLUETOOTH_REQUEST_CODE = 1001
-    }
+
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(broadcastReceiver)
+    }
+
+
+    private class  BlueToothClass(var handler : Handler) {
+        inner class ThreadConnection(var bluetoothAdapter: BluetoothAdapter,device: BluetoothDevice) : Thread(){
+
+            private  val blueToothSocket : BluetoothSocket? by lazy {
+                device.createRfcommSocketToServiceRecord(UUID.randomUUID())
+            }
+
+            private var mmInputStream = blueToothSocket?.inputStream
+            private var mmOutPutStream = blueToothSocket?.outputStream
+            private var mmBuffer : ByteArray = ByteArray(1024)
+            var numBytes : Int = 0
+            override fun run() {
+                super.run()
+
+
+                bluetoothAdapter.cancelDiscovery()
+
+                blueToothSocket.use {
+                    it?.connect()
+
+                    // TODO : Device Is Connected , manage work
+                    numBytes = try {
+                        mmInputStream?.read(mmBuffer)!!
+                    }catch ( e : Exception){
+                        Log.d("TAG","Exception OCCURED")
+                    }
+
+                    val readMsg  = handler.obtainMessage(MESSAGE_READ,numBytes,-1,mmBuffer)
+                    readMsg.sendToTarget()
+                    closeSocket()
+
+                }
+
+            }
+            // Call this from the main activity to send data to the remote device.
+            fun write(bytes: ByteArray) {
+                try {
+                    mmOutPutStream?.write(bytes)
+                } catch (e: IOException) {
+                    Log.e(TAG, "Error occurred when sending data", e)
+
+                    // Send a failure message back to the activity.
+                    val writeErrorMsg = handler.obtainMessage(MESSAGE_TOAST)
+                    val bundle = Bundle().apply {
+                        putString("toast", "Couldn't send data to the other device")
+                    }
+                    writeErrorMsg.data = bundle
+                    handler.sendMessage(writeErrorMsg)
+                    return
+                }
+
+                // Share the sent message with the UI activity.
+                val writtenMsg = handler.obtainMessage(
+                    MESSAGE_WRITE, -1, -1, bytes)
+                writtenMsg.sendToTarget()
+            }
+
+
+            fun closeSocket(){
+                try {
+                    blueToothSocket?.close()
+                } catch (e: Exception){
+                    Log.d("TAG","Could not close blutooth socket")
+                }
+            }
+            private fun manageSomeOtherWork() {
+
+            }
+        }
+    }
+
+    companion object {
+        const val TAG = "MainActivity"
+        const val BLUETOOTH_REQUEST_CODE = 1001
+        const val MESSAGE_READ = 0
+        const val MESSAGE_WRITE = 1
+        const val MESSAGE_TOAST = 2
     }
 
 }
